@@ -955,9 +955,7 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
     ("RDOQ",                                            c->m_RDOQ,                                           "Rate-Distortion Optimized Quantization mode")
     ("RDOQTS",                                          c->m_useRDOQTS,                                      "Rate-Distortion Optimized Quantization mode for TransformSkip")
     ("SelectiveRDOQ",                                   toSelectiveRDOQ,                                     "Enable selective RDOQ (0: never, 1: always, 2: for natural content)")
-    #if JVET_DEV_CSF_SCALING_LIST
     ("CSFScalingList",                                  c->m_useCSFScalingList,                       "Use CSF-weighted scaling lists for perceptual quantization (0: off, 1: on)")
-    #endif
 
     ("JointCbCr",                                       c->m_JointCbCrMode,                                  "Enable joint coding of chroma residuals (0:off, 1:on)")
     ("CabacInitPresent",                                c->m_cabacInitPresent,                               "Enable cabac table index selection based on previous frame")
