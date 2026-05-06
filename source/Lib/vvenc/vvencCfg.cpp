@@ -392,6 +392,7 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
   c->m_picReordering                           = 1;
 
   c->m_usePerceptQPA                           = false;         ///< perceptually motivated input-adaptive QP modification, abbrev. perceptual QP adaptation (QPA)
+  c->m_useCSFScalingList                       = false;         ///< CSF-weighted scaling lists: disabled by default
   c->m_sliceTypeAdapt                          = -1;            ///< perceptually and objectively motivated slice type adaptation (STA)
   c->m_minIntraDist                            = -1;
 
