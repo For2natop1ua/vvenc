@@ -139,6 +139,9 @@ private:
   void    xInitScalingList        ( const Quant* other, bool useScalingLists );
   void    xDestroyScalingList     ();
   void    xSetFlatScalingList     ( uint32_t list, uint32_t sizeX, uint32_t sizeY, int qp );
+  #if JVET_DEV_CSF_SCALING_LIST
+    void    xSetCSFScalingList      ( uint32_t list, uint32_t sizeX, uint32_t sizeY, int qp );
+  #endif
   void    xSignBitHidingHDQ       ( TCoeffSig* pQCoef, const TCoeff* pCoef, TCoeff* deltaU, const CoeffCodingContext& cctx, int &lastPos, const int maxLog2TrDynamicRange);
   void    ( *xDeQuant)            (const int maxX,const int maxY,const int scale,const TCoeffSig*const piQCoef,const size_t piQCfStride,TCoeff   *const piCoef,const int rightShift,const int inputMaximum,const TCoeff transformMaximum);
   void    ( *xQuant )             ( const TransformUnit tu, const ComponentID compID,

@@ -46,6 +46,7 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "Quant.h"
+#include "CSFWeights.h"
 #include "UnitTools.h"
 #include "ContextModelling.h"
 #include "CodingStructure.h"
@@ -637,7 +638,11 @@ void Quant::setFlatScalingList(const int maxLog2TrDynamicRange[MAX_NUM_CH], cons
       {
         for(int qp = minimumQp; qp < maximumQp; qp++)
         {
-          xSetFlatScalingList( list, sizeX, sizeY, qp );
+          #if JVET_DEV_CSF_SCALING_LIST
+                    xSetCSFScalingList( list, sizeX, sizeY, qp );   // perceptual CSF-weighted matrix
+          #else
+                    xSetFlatScalingList( list, sizeX, sizeY, qp );
+          #endif
         }
       }
     }
@@ -669,6 +674,43 @@ void Quant::xSetFlatScalingList(uint32_t list, uint32_t sizeX, uint32_t sizeY, i
     *dequantcoeff++ = invQuantScales;
   }
 }
+
+#if JVET_DEV_CSF_SCALING_LIST
+  /** set CSF-weighted matrix value to quantized coefficient
+   * \param list   List ID
+   * \param sizeX  horizontal size index
+   * \param sizeY  vertical size index
+   * \param qp     Quantization parameter (remainder)
+   */
+  void Quant::xSetCSFScalingList( uint32_t list, uint32_t sizeX, uint32_t sizeY, int qp )
+{
+  const uint32_t width  = g_scalingListSizeX[sizeX];
+  const uint32_t height = g_scalingListSizeX[sizeY];
+
+  int *quantcoeff   = getQuantCoeff  ( list, qp, sizeX, sizeY );
+  int *dequantcoeff = getDequantCoeff( list, qp, sizeX, sizeY );
+
+  const bool blockIsNotPowerOf4 = ( ( Log2( width * height ) ) & 1 ) == 1;
+  const int  quantScales        = g_quantScales   [blockIsNotPowerOf4 ? 1 : 0][qp];
+  const int  invQuantScales     = g_invQuantScales[blockIsNotPowerOf4 ? 1 : 0][qp] << 4;
+
+  // Use at least 8 for interpCSF to avoid degenerate scale when width < 8
+  const int interpSize = static_cast<int>( std::max( { width, height, 8u } ) );
+
+  for( uint32_t y = 0; y < height; y++ )
+  {
+    for( uint32_t x = 0; x < width; x++ )
+    {
+      const int csfW = CSF::interpCSF( static_cast<int>( y ), static_cast<int>( x ), interpSize );
+
+      // Higher CSF weight -> less perceptually visible -> coarser quantization:
+      // smaller quantcoeff and larger dequantcoeff.
+      quantcoeff  [y * width + x] = ( quantScales * 16 + csfW / 2 ) / csfW;
+      dequantcoeff[y * width + x] = ( csfW * ( invQuantScales >> 4 ) + 8 ) >> 4;
+    }
+  }
+}
+#endif // JVET_DEV_CSF_SCALING_LIST
 
 
 /** initialization process of scaling list array
