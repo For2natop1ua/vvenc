@@ -69,6 +69,8 @@ namespace vvenc {
 
 #define JVET_M0497_MATRIX_MULT                            1 // 0: Fast method; 1: Matrix multiplication
 
+#define JVET_DEV_CSF_SCALING_LIST                         1 // 0: Standard flat scaling list; 1: CSF-weighted perceptual scaling list
+
 #define FIX_FOR_TEMPORARY_COMPILER_ISSUES_ENABLED         1 // Some compilers fail on particular code fragments, remove this when the compiler is fixed (or new version is used)
 
 #define IFP_RC_DETERMINISTIC                              0 // Enables Rate Control deterministic behavior (same results) when using IFP
