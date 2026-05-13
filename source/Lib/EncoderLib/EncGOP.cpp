@@ -1012,6 +1012,8 @@ void EncGOP::xInitSPS(SPS &sps) const
   sps.log2MaxTbSize                 = m_pcEncCfg->m_log2MaxTbSize;
   sps.temporalMVPEnabled            = m_pcEncCfg->m_TMVPModeId == 2 || m_pcEncCfg->m_TMVPModeId == 1;
   sps.LFNST                         = m_pcEncCfg->m_LFNST != 0;
+  sps.scalingListEnabled                 = m_pcEncCfg->m_useCSFScalingList;
+  sps.disableScalingMatrixForLfnstBlks   = m_pcEncCfg->m_useCSFScalingList;
   sps.entropyCodingSyncEnabled      = m_pcEncCfg->m_entropyCodingSyncEnabled;
   sps.entryPointsPresent            = m_pcEncCfg->m_entryPointsPresent;
   sps.depQuantEnabled               = m_pcEncCfg->m_DepQuantEnabled;
@@ -2150,6 +2152,35 @@ void EncGOP::xInitFirstSlice( Picture& pic, const PicList& picList, bool isEncod
       alfAPS->ccAlfParam.reset();
     }
   }
+
+#if JVET_DEV_CSF_SCALING_LIST
+  if( m_pcEncCfg->m_useCSFScalingList )
+  {
+    const int apsId     = 0;
+    const int apsMapIdx = ( apsId << NUM_APS_TYPE_LEN ) + SCALING_LIST_APS;
+    APS* scalingListAPS = pic.picApsMap.getPS( apsMapIdx );
+    if( !scalingListAPS )
+    {
+      scalingListAPS = pic.picApsMap.allocatePS( apsMapIdx );
+    }
+
+    scalingListAPS->apsId         = apsId;
+    scalingListAPS->apsType       = SCALING_LIST_APS;
+    scalingListAPS->temporalId    = slice->TLayer;
+    scalingListAPS->layerId       = pic.layerId;
+    scalingListAPS->poc           = slice->poc;
+    scalingListAPS->chromaPresent = slice->sps->chromaFormatIdc != CHROMA_400;
+
+    slice->picHeader->explicitScalingListEnabled = true;
+    slice->picHeader->scalingListApsId           = apsId;
+    slice->picHeader->scalingListAps             = scalingListAPS;
+    slice->explicitScalingListUsed               = true;
+    pic.cs->scalinglistAps                       = scalingListAPS;
+
+    pic.picApsMap.setChangedFlag( apsMapIdx, true );
+  }
+#endif
+
   CHECK( slice->enableDRAPSEI && m_pcEncCfg->m_maxParallelFrames, "Dependent Random Access Point is not supported by Frame Parallel Processing" );
 
   pic.isInitDone = true;
@@ -2526,6 +2557,26 @@ int EncGOP::xWriteParameterSets( Picture& pic, AccessUnitList& accessUnit, HLSWr
       CHECK( aps != slice->picHeader->lmcsAps, "Wrong LMCS APS pointer" );
     }
   }
+
+#if JVET_DEV_CSF_SCALING_LIST
+  if( sps.scalingListEnabled && slice->picHeader->explicitScalingListEnabled )
+  {
+    ParameterSetMap<APS>& apsMap = pic.picApsMap;
+    const int apsId              = slice->picHeader->scalingListApsId;
+    const int apsMapIdx          = ( apsId << NUM_APS_TYPE_LEN ) + SCALING_LIST_APS;
+    APS* aps                     = apsMap.getPS( apsMapIdx );
+    const bool writeAps          = aps && apsMap.getChangedFlag( apsMapIdx );
+
+    if( writeAps )
+    {
+      aps->chromaPresent = slice->sps->chromaFormatIdc != CHROMA_400;
+      aps->temporalId    = slice->TLayer;
+      actualTotalBits += xWriteAPS( accessUnit, aps, hlsWriter, VVENC_NAL_UNIT_PREFIX_APS );
+      apsMap.clearChangedFlag( apsMapIdx );
+      CHECK( aps != slice->picHeader->scalingListAps, "Wrong scaling list APS pointer" );
+    }
+  }
+#endif
 
   // send ALF APS
   if ( sps.alfEnabled && (slice->alfEnabled[COMP_Y] || slice->ccAlfCbEnabled || slice->ccAlfCrEnabled ))

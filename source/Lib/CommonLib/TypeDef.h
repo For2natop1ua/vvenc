@@ -426,6 +426,16 @@ enum ScalingListSize : int8_t
   SCALING_LIST_LAST_CODED = SCALING_LIST_64x64
 };
 
+enum ScalingList1dStartIdx : int8_t
+{
+  SCALING_LIST_1D_START_2x2   = 0,
+  SCALING_LIST_1D_START_4x4   = 2,
+  SCALING_LIST_1D_START_8x8   = 8,
+  SCALING_LIST_1D_START_16x16 = 14,
+  SCALING_LIST_1D_START_32x32 = 20,
+  SCALING_LIST_1D_START_64x64 = 26,
+};
+
 enum SAOMode : int8_t //mode
 {
   SAO_MODE_OFF = 0,

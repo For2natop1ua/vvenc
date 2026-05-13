@@ -48,6 +48,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "VLCWriter.h"
 #include "SEIwrite.h"
 #include "CommonLib/CommonDef.h"
+#include "CommonLib/CSFWeights.h"
 #include "CommonLib/Unit.h"
 #include "CommonLib/Picture.h" // th remove this
 #include "CommonLib/dtrace_next.h"
@@ -449,7 +450,7 @@ void HLSWriter::codeAPS( const APS* pcAPS )
   }
   else if( pcAPS->apsType == SCALING_LIST_APS )
   {
-    THROW("no support");
+    codeCSFScalingListAps( pcAPS );
   }
   else
   {
@@ -457,6 +458,56 @@ void HLSWriter::codeAPS( const APS* pcAPS )
   }
   WRITE_FLAG(0, "aps_extension_flag");
   xWriteRbspTrailingBits();
+}
+
+void HLSWriter::codeCSFScalingListAps( const APS* aps )
+{
+  xCodeCSFScalingList( aps->chromaPresent );
+}
+
+void HLSWriter::xCodeCSFScalingList( bool chromaPresent )
+{
+  for( uint32_t scalingListId = 0; scalingListId < 28; scalingListId++ )
+  {
+    const bool isLumaScalingList = scalingListId % MAX_NUM_COMP == SCALING_LIST_1D_START_4x4
+                                || scalingListId == SCALING_LIST_1D_START_64x64 + 1;
+    if( !chromaPresent && !isLumaScalingList )
+    {
+      continue;
+    }
+
+    WRITE_FLAG( 0, "scaling_list_copy_mode_flag" );
+    WRITE_FLAG( 0, "scaling_list_predictor_mode_flag" );
+    xCodeCSFScalingListData( scalingListId );
+  }
+}
+
+void HLSWriter::xCodeCSFScalingListData( uint32_t scalingListId )
+{
+  const int matrixSize = scalingListId < SCALING_LIST_1D_START_4x4 ? 2 : ( scalingListId < SCALING_LIST_1D_START_8x8 ? 4 : 8 );
+  const ScanElement* scan = getScanOrder( SCAN_UNGROUPED, Log2( matrixSize ), Log2( matrixSize ) );
+  int nextCoef = 0;
+
+  if( scalingListId >= SCALING_LIST_1D_START_16x16 )
+  {
+    const int data = 8;
+    nextCoef += data;
+    WRITE_SVLC( data, "scaling_list_dc_coef" );
+  }
+
+  for( int scanPos = 0; scanPos < matrixSize * matrixSize; scanPos++ )
+  {
+    if( scalingListId >= SCALING_LIST_1D_START_64x64 && scan[scanPos].x >= 4 && scan[scanPos].y >= 4 )
+    {
+      continue;
+    }
+
+    const int coeff = CSF::interpCSF( scan[scanPos].y, scan[scanPos].x, 8 );
+    const int data  = coeff - 8 - nextCoef;
+    CHECK( data < -128 || data > 127, "CSF scaling list delta out of range" );
+    nextCoef += data;
+    WRITE_SVLC( data, "scaling_list_delta_coef" );
+  }
 }
 
 void HLSWriter::codeAlfAps( const APS* pcAPS )

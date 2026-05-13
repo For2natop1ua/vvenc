@@ -119,6 +119,7 @@ public:
   void  codeAPS                 ( const APS* pcAPS );
   void  codeAlfAps              ( const APS* pcAPS );
   void  codeLmcsAps             ( const APS* aps );
+  void  codeCSFScalingListAps   ( const APS* aps );
   void  codeVPS                 ( const VPS* pcVPS );
   void  codeDCI                 ( const DCI* dci );
   void  codePictureHeader       ( const PicHeader* picHeader, bool writeRbspTrailingBits );
@@ -135,6 +136,8 @@ public:
 
 private:
   void dpb_parameters           ( int maxSubLayersMinus1, bool subLayerInfoFlag, const SPS *pcSPS);
+  void xCodeCSFScalingList      ( bool chromaPresent );
+  void xCodeCSFScalingListData  ( uint32_t scalingListId );
   void xCodeRefPicList          ( const ReferencePictureList* rpl, bool isLongTermPresent, uint32_t ltLsbBitsCount, const bool isForbiddenZeroDeltaPoc, int rplIdx );
   void xCodePredWeightTable     ( const PicHeader *picHeader, const PPS *pps, const SPS *sps );
   void xCodePredWeightTable     ( const Slice* slice );
