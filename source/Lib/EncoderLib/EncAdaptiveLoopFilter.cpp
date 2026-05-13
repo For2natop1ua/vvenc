@@ -883,13 +883,16 @@ alf_float_t AlfCovariance::calculateError( const int *clip ) const
 #define REG_SQR          alf_float_t( 0.0000001 )
 
 //Find filter coeff related
-int AlfCovariance::gnsCholeskyDec( TE inpMatr, TE outMatr, int numEq ) const
+template<int NumEq>
+static int gnsCholeskyDec( AlfCovariance::TE inpMatr, AlfCovariance::TE outMatr )
 {
-  for( int i = 0; i < numEq; i++ )
+  static_assert( NumEq == 7 || NumEq == 13, "Unsupported ALF Cholesky order" );
+
+  for( int i = 0; i < NumEq; i++ )
   {
     alf_float_t invDiag = 0.0f;
 
-    for( int j = i; j < numEq; j++ )
+    for( int j = i; j < NumEq; j++ )
     {
       /* Compute the scaling factor */
       alf_float_t scale = inpMatr[i][j];
@@ -924,8 +927,10 @@ int AlfCovariance::gnsCholeskyDec( TE inpMatr, TE outMatr, int numEq ) const
   return 1; /* Signal that Cholesky factorization is successfully performed */
 }
 
-void AlfCovariance::gnsTransposeBacksubstitution( TE U, alf_float_t* rhs, alf_float_t* x, int order ) const
+template<int NumEq>
+static void gnsTransposeBacksubstitution( AlfCovariance::TE U, alf_float_t* rhs, alf_float_t* x )
 {
+  static_assert( NumEq == 7 || NumEq == 13, "Unsupported ALF Cholesky order" );
 
 #if __GNUC__ == 7
   _Pragma( "GCC diagnostic push" );
@@ -933,7 +938,7 @@ void AlfCovariance::gnsTransposeBacksubstitution( TE U, alf_float_t* rhs, alf_fl
 #endif
   /* Backsubstitution starts */
   x[0] = rhs[0] / U[0][0];               /* First row of U'                   */
-  for( int i = 1; i < order; i++ )
+  for( int i = 1; i < NumEq; i++ )
   {         /* For the rows 1..order-1           */
 
     alf_float_t sum = 0; //Holds backsubstitution from already handled rows
@@ -950,9 +955,12 @@ void AlfCovariance::gnsTransposeBacksubstitution( TE U, alf_float_t* rhs, alf_fl
 #endif
 }
 
-void AlfCovariance::gnsBacksubstitution( TE R, alf_float_t* z, int size, alf_float_t* A ) const
+template<int NumEq>
+static void gnsBacksubstitution( AlfCovariance::TE R, alf_float_t* z, alf_float_t* A )
 {
-  size--;
+  static_assert( NumEq == 7 || NumEq == 13, "Unsupported ALF Cholesky order" );
+
+  const int size = NumEq - 1;
   A[size] = z[size] / R[size][size];
 
   for( int i = size - 1; i >= 0; i-- )
@@ -977,25 +985,28 @@ int AlfCovariance::gnsSolveByChol( const int *clip, alf_float_t*x, int numEq ) c
   return gnsSolveByChol( LHS, rhs, x, numEq );
 }
 
-int AlfCovariance::gnsSolveByChol( TE LHS, alf_float_t* rhs, alf_float_t*x, int numEq ) const
+template<int NumEq>
+static int solveByChol( AlfCovariance::TE LHS, alf_float_t* rhs, alf_float_t*x )
 {
-  Ty aux;     /* Auxiliary vector */
-  TE U;    /* Upper triangular Cholesky factor of LHS */
+  static_assert( NumEq == 7 || NumEq == 13, "Unsupported ALF Cholesky order" );
+
+  AlfCovariance::Ty aux;     /* Auxiliary vector */
+  AlfCovariance::TE U;    /* Upper triangular Cholesky factor of LHS */
 
   int res = 1;  // Signal that Cholesky factorization is successfully performed
 
                 /* The equation to be solved is LHSx = rhs */
 
                 /* Compute upper triangular U such that U'*U = LHS */
-  if( gnsCholeskyDec( LHS, U, numEq ) ) /* If Cholesky decomposition has been successful */
+  if( gnsCholeskyDec<NumEq>( LHS, U ) ) /* If Cholesky decomposition has been successful */
   {
     /* Now, the equation is  U'*U*x = rhs, where U is upper triangular
     * Solve U'*aux = rhs for aux
     */
-    gnsTransposeBacksubstitution( U, rhs, aux, numEq );
+    gnsTransposeBacksubstitution<NumEq>( U, rhs, aux );
 
     /* The equation is now U*x = aux, solve it for x (new motion coefficients) */
-    gnsBacksubstitution( U, aux, numEq, x );
+    gnsBacksubstitution<NumEq>( U, aux, x );
 
   }
   else /* LHS was singular */
@@ -1003,27 +1014,41 @@ int AlfCovariance::gnsSolveByChol( TE LHS, alf_float_t* rhs, alf_float_t*x, int 
     res = 0;
 
     /* Regularize LHS */
-    for( int i = 0; i < numEq; i++ )
+    for( int i = 0; i < NumEq; i++ )
     {
       LHS[i][i] += REG;
     }
 
     /* Compute upper triangular U such that U'*U = regularized LHS */
-    res = gnsCholeskyDec( LHS, U, numEq );
+    res = gnsCholeskyDec<NumEq>( LHS, U );
 
     if( !res )
     {
-      std::memset( x, 0, sizeof( alf_float_t )*numEq );
+      std::memset( x, 0, sizeof( alf_float_t )*NumEq );
       return 0;
     }
 
     /* Solve  U'*aux = rhs for aux */
-    gnsTransposeBacksubstitution( U, rhs, aux, numEq );
+    gnsTransposeBacksubstitution<NumEq>( U, rhs, aux );
 
     /* Solve U*x = aux for x */
-    gnsBacksubstitution( U, aux, numEq, x );
+    gnsBacksubstitution<NumEq>( U, aux, x );
   }
   return res;
+}
+
+int AlfCovariance::gnsSolveByChol( TE LHS, alf_float_t* rhs, alf_float_t*x, int numEq ) const
+{
+  if( numEq == 7 )
+  {
+    return solveByChol<7>( LHS, rhs, x );
+  }
+  else if( numEq == 13 )
+  {
+    return solveByChol<13>( LHS, rhs, x );
+  }
+  CHECK( true, "Unsupported ALF Cholesky order" );
+  return 0;
 }
 //////////////////////////////////////////////////////////////////////////////////////////
 

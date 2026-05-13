@@ -57,6 +57,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <time.h>
 
 #include "CommonLib/AdaptiveLoopFilter.h"
+#include "CommonLib/LoopFilter.h"
 #include "CommonLib/AffineGradientSearch.h"
 #include "CommonLib/CommonDef.h"
 #include "CommonLib/DepQuant.h"
@@ -3164,6 +3165,94 @@ static bool test_SampleAdaptiveOffset()
 
 #endif // ENABLE_SIMD_OPT_SAO
 
+#if defined( TARGET_SIMD_ARM ) && ENABLE_SIMD_DBLF
+
+namespace vvenc {
+  void xFilteringPandQCore( Pel*, ptrdiff_t, const ptrdiff_t, int, int, int );
+  void xFilteringPandQNeonEntry( Pel*, ptrdiff_t, const ptrdiff_t, int, int, int );
+}
+
+static bool check_xFilteringPandQ( void ( *neon )( Pel*, ptrdiff_t, const ptrdiff_t, int, int, int ),
+                                    const std::vector<Pel>& input,
+                                    ptrdiff_t step, ptrdiff_t offset, int nP, int nQ, int tc )
+{
+  const ptrdiff_t stride = 32;
+  std::vector<Pel> buf_ref  = input;
+  std::vector<Pel> buf_neon = input;
+
+  // Horizontal (step==1): boundary at row 8, col 0  -- needs rows [0..15]
+  // Vertical   (step==stride): boundary at row 0, col 8 -- needs cols [0..16]
+  ptrdiff_t src_idx = ( step == 1 ) ? 8 * stride : 8;
+
+  vvenc::xFilteringPandQCore( buf_ref.data()  + src_idx, step, offset, nP, nQ, tc );
+  neon(                        buf_neon.data() + src_idx, step, offset, nP, nQ, tc );
+
+  std::ostringstream ctx;
+  ctx << "xFilteringPandQ step=" << step << " offset=" << offset
+      << " nP=" << nP << " nQ=" << nQ << " tc=" << tc;
+  return compare_values_1d( ctx.str(), buf_ref.data(), buf_neon.data(), (unsigned)input.size() );
+}
+
+static bool test_LoopFilterPandQ()
+{
+  printf( "Testing LoopFilter::xFilteringPandQ\n" );
+
+  auto neon = vvenc::xFilteringPandQNeonEntry;
+
+  const ptrdiff_t stride   = 32;
+  const int       buf_rows = 20;
+  const int       buf_size = buf_rows * stride;
+  bool            passed   = true;
+
+  const int nP_vals[] = { 3, 3, 5, 5, 5, 7, 7, 7 };
+  const int nQ_vals[] = { 5, 7, 3, 5, 7, 3, 5, 7 };
+
+  // --- Deterministic edge vectors (always run, even in fast mode) ---
+  std::vector<Pel> buf_zero( buf_size, 0 );
+  std::vector<Pel> buf_max ( buf_size, 1023 );
+  std::vector<Pel> buf_alt ( buf_size );
+  for( int i = 0; i < buf_size; i++ ) buf_alt[i] = ( i & 1 ) ? 1023 : 0;
+
+  struct { const std::vector<Pel>* buf; int tc; } fixed[] = {
+    { &buf_zero, 16 },  // all-zero, mid tc
+    { &buf_max,  16 },  // all-max, mid tc
+    { &buf_alt,  16 },  // alternating, mid tc
+    { &buf_alt,   1 },  // alternating, tc=1 (minimum)
+    { &buf_zero, 32 },  // all-zero,    tc=32 (maximum)
+  };
+
+  for( auto& f : fixed )
+  {
+    for( int k = 0; k < 8; ++k )
+    {
+      int nP = nP_vals[k], nQ = nQ_vals[k];
+      passed = check_xFilteringPandQ( neon, *f.buf, 1,      stride, nP, nQ, f.tc ) && passed;
+      passed = check_xFilteringPandQ( neon, *f.buf, stride, 1,      nP, nQ, f.tc ) && passed;
+    }
+  }
+
+  // --- Random cases ---
+  InputGenerator<Pel> gen{ 10, /*is_signed=*/false };
+  unsigned num_cases = g_fastUnitTest ? 10 : NUM_CASES;
+
+  for( unsigned i = 0; i < num_cases; ++i )
+  {
+    int tc = 1 + ( rand() & 0x1f );
+    std::vector<Pel> buf_rand( buf_size );
+    std::generate( buf_rand.begin(), buf_rand.end(), gen );
+
+    for( int k = 0; k < 8; ++k )
+    {
+      int nP = nP_vals[k], nQ = nQ_vals[k];
+      passed = check_xFilteringPandQ( neon, buf_rand, 1,      stride, nP, nQ, tc ) && passed;
+      passed = check_xFilteringPandQ( neon, buf_rand, stride, 1,      nP, nQ, tc ) && passed;
+    }
+  }
+  return passed;
+}
+
+#endif // TARGET_SIMD_ARM && ENABLE_SIMD_DBLF
+
 struct UnitTestEntry
 {
   std::string name;
@@ -3203,6 +3292,9 @@ static const UnitTestEntry test_suites[] = {
 #endif
 #if ENABLE_SIMD_OPT_SAO
     { "SAO", test_SampleAdaptiveOffset },
+#endif
+#if defined( TARGET_SIMD_ARM ) && ENABLE_SIMD_DBLF
+    { "LoopFilterPandQ", test_LoopFilterPandQ },
 #endif
 };
 

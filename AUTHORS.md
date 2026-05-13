@@ -22,3 +22,4 @@
 * Micro Daryl Robles, @micro-arm, Arm
 * Alex Davicenko, @alex-davicenko-arm, Arm
 * Li Zhang, @lizhang-arm, Arm
+* Jeongkeun Kim, @kjg0724

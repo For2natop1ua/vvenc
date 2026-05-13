@@ -309,9 +309,6 @@ private:
   // Cholesky decomposition
 
   int  gnsSolveByChol              ( const int *clip, alf_float_t*x, int numEq ) const;
-  void gnsBacksubstitution         ( TE R, alf_float_t* z, int size, alf_float_t* A ) const;
-  void gnsTransposeBacksubstitution( TE U, alf_float_t* rhs, alf_float_t* x, int order ) const;
-  int  gnsCholeskyDec              ( TE inpMatr, TE outMatr, int numEq ) const;
 };
 
 struct EncAlfRsrc
