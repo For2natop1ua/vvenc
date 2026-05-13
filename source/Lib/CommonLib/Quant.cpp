@@ -638,11 +638,11 @@ void Quant::setFlatScalingList(const int maxLog2TrDynamicRange[MAX_NUM_CH], cons
       {
         for(int qp = minimumQp; qp < maximumQp; qp++)
         {
-          #if JVET_DEV_CSF_SCALING_LIST
-                    xSetCSFScalingList( list, sizeX, sizeY, qp );   // perceptual CSF-weighted matrix
-          #else
-                    xSetFlatScalingList( list, sizeX, sizeY, qp );
-          #endif
+#if JVET_DEV_CSF_SCALING_LIST
+          xSetCSFScalingList( list, sizeX, sizeY, qp );
+#else
+          xSetFlatScalingList( list, sizeX, sizeY, qp );
+#endif
         }
       }
     }
@@ -676,13 +676,13 @@ void Quant::xSetFlatScalingList(uint32_t list, uint32_t sizeX, uint32_t sizeY, i
 }
 
 #if JVET_DEV_CSF_SCALING_LIST
-  /** set CSF-weighted matrix value to quantized coefficient
-   * \param list   List ID
-   * \param sizeX  horizontal size index
-   * \param sizeY  vertical size index
-   * \param qp     Quantization parameter (remainder)
-   */
-  void Quant::xSetCSFScalingList( uint32_t list, uint32_t sizeX, uint32_t sizeY, int qp )
+/** set CSF-weighted matrix value to quantized coefficient
+ * \param list   List ID
+ * \param sizeX  horizontal size index
+ * \param sizeY  vertical size index
+ * \param qp     Quantization parameter (remainder)
+ */
+void Quant::xSetCSFScalingList( uint32_t list, uint32_t sizeX, uint32_t sizeY, int qp )
 {
   const uint32_t width  = g_scalingListSizeX[sizeX];
   const uint32_t height = g_scalingListSizeX[sizeY];
@@ -692,21 +692,63 @@ void Quant::xSetFlatScalingList(uint32_t list, uint32_t sizeX, uint32_t sizeY, i
 
   const bool blockIsNotPowerOf4 = ( ( Log2( width * height ) ) & 1 ) == 1;
   const int  quantScales        = g_quantScales   [blockIsNotPowerOf4 ? 1 : 0][qp];
-  const int  invQuantScales     = g_invQuantScales[blockIsNotPowerOf4 ? 1 : 0][qp] << 4;
-
-  // Use at least 8 for interpCSF to avoid degenerate scale when width < 8
-  const int interpSize = static_cast<int>( std::max( { width, height, 8u } ) );
+  const int  invQuantScales     = g_invQuantScales[blockIsNotPowerOf4 ? 1 : 0][qp];
 
   for( uint32_t y = 0; y < height; y++ )
   {
     for( uint32_t x = 0; x < width; x++ )
     {
-      const int csfW = CSF::interpCSF( static_cast<int>( y ), static_cast<int>( x ), interpSize );
+      uint32_t coeffX = 0;
+      uint32_t coeffY = 0;
+
+      if( width == height )
+      {
+        if( y >= JVET_C0024_ZERO_OUT_TH || x >= JVET_C0024_ZERO_OUT_TH )
+        {
+          quantcoeff  [y * width + x] = 0;
+          dequantcoeff[y * width + x] = 0;
+          continue;
+        }
+
+        const uint32_t sizeNum = std::min( width, 8u );
+        const uint32_t ratio   = width / sizeNum;
+
+        coeffX = x / ratio;
+        coeffY = y / ratio;
+      }
+      else
+      {
+        if( y >= JVET_C0024_ZERO_OUT_TH || x >= JVET_C0024_ZERO_OUT_TH )
+        {
+          quantcoeff  [y * width + x] = 0;
+          dequantcoeff[y * width + x] = 0;
+          continue;
+        }
+
+        const uint32_t largeSideId = std::max( sizeX, sizeY );
+        const uint32_t sizeNum     = largeSideId >= SCALING_LIST_8x8 ? 8 : 4;
+        const uint32_t ratioWH     = height > width ? height / width : width / height;
+        const uint32_t ratioH      = height / sizeNum ? height / sizeNum : sizeNum / height;
+        const uint32_t ratioW      = width  / sizeNum ? width  / sizeNum : sizeNum / width;
+
+        if( height > width )
+        {
+          coeffY = y / ratioH;
+          coeffX = ( x * ratioWH ) / ratioH;
+        }
+        else
+        {
+          coeffY = ( y * ratioWH ) / ratioW;
+          coeffX = x / ratioW;
+        }
+      }
+
+      const int csfW = CSF::interpCSF( static_cast<int>( coeffY ), static_cast<int>( coeffX ), 8 );
 
       // Higher CSF weight -> less perceptually visible -> coarser quantization:
       // smaller quantcoeff and larger dequantcoeff.
       quantcoeff  [y * width + x] = ( quantScales * 16 + csfW / 2 ) / csfW;
-      dequantcoeff[y * width + x] = ( csfW * ( invQuantScales >> 4 ) + 8 ) >> 4;
+      dequantcoeff[y * width + x] = csfW * invQuantScales;
     }
   }
 }
