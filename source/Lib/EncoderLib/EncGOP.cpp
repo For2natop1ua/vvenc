@@ -144,6 +144,9 @@ EncGOP::EncGOP( MsgLog& logger )
   , m_pocCRA             ( 0 )
   , m_associatedIRAPPOC  ( 0 )
   , m_associatedIRAPType ( VVENC_NAL_UNIT_CODED_SLICE_IDR_N_LP )
+#if JVET_DEV_CSF_SCALING_LIST
+  , m_csfScalingListApsWritten ( false )
+#endif
 {
 }
 
@@ -181,6 +184,9 @@ void EncGOP::init( const VVEncCfg& encCfg, const GOPCfg* gopCfg, RateCtrl& rateC
   m_pcRateCtrl    = &rateCtrl;
   m_threadPool    = threadPool;
   m_isPreAnalysis = isPreAnalysis;
+#if JVET_DEV_CSF_SCALING_LIST
+  m_csfScalingListApsWritten = false;
+#endif
 
   // setup parameter sets
   const int dciId = m_pcEncCfg->m_decodingParameterSetEnabled ? 1 : 0;
@@ -1012,8 +1018,8 @@ void EncGOP::xInitSPS(SPS &sps) const
   sps.log2MaxTbSize                 = m_pcEncCfg->m_log2MaxTbSize;
   sps.temporalMVPEnabled            = m_pcEncCfg->m_TMVPModeId == 2 || m_pcEncCfg->m_TMVPModeId == 1;
   sps.LFNST                         = m_pcEncCfg->m_LFNST != 0;
-  sps.scalingListEnabled                 = m_pcEncCfg->m_useCSFScalingList;
-  sps.disableScalingMatrixForLfnstBlks   = m_pcEncCfg->m_useCSFScalingList;
+  sps.scalingListEnabled = m_pcEncCfg->m_useCSFScalingList;
+  sps.disableScalingMatrixForLfnstBlks = m_pcEncCfg->m_useCSFScalingList;
   sps.entropyCodingSyncEnabled      = m_pcEncCfg->m_entropyCodingSyncEnabled;
   sps.entryPointsPresent            = m_pcEncCfg->m_entryPointsPresent;
   sps.depQuantEnabled               = m_pcEncCfg->m_DepQuantEnabled;
@@ -2177,7 +2183,10 @@ void EncGOP::xInitFirstSlice( Picture& pic, const PicList& picList, bool isEncod
     slice->explicitScalingListUsed               = true;
     pic.cs->scalinglistAps                       = scalingListAPS;
 
-    pic.picApsMap.setChangedFlag( apsMapIdx, true );
+    const bool writeScalingListAps = !m_csfScalingListApsWritten
+                                  || ( m_pcEncCfg->m_rewriteParamSets && slice->isIRAP() );
+    pic.picApsMap.setChangedFlag( apsMapIdx, writeScalingListAps );
+    m_csfScalingListApsWritten |= writeScalingListAps;
   }
 #endif
 

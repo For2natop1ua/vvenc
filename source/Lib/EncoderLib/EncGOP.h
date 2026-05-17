@@ -160,6 +160,9 @@ private:
   int                       m_associatedIRAPPOC;
   vvencNalUnitType          m_associatedIRAPType;
   RateCapParam              m_rcap;
+#if JVET_DEV_CSF_SCALING_LIST
+  bool                      m_csfScalingListApsWritten;
+#endif
 
   std::list<EncPicture*>    m_freePicEncoderList;
   std::list<Picture*>       m_gopEncListInput;
